@@ -1,0 +1,3 @@
+[jobs.slim]
+command = ["sh", "-c", "cargo test 2>&1 | grep -v ignored"]
+need_stdout = true
