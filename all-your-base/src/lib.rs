@@ -20,7 +20,11 @@ fn to_decimal(digits: &[u32], base: u32) -> Result<u32, Error> {
     Ok(value)
 }
 
-fn from_decimal(mut number: u32, base: u32) -> Vec<u32> {
+fn from_decimal(mut number: u32, base: u32) -> Result<Vec<u32>, Error> {
+    if base < 2 {
+        return Err(Error::InvalidOutputBase);
+    }
+
     let mut res = Vec::new();
     loop {
         let (q, r) = (number / base, number % base);
@@ -33,13 +37,10 @@ fn from_decimal(mut number: u32, base: u32) -> Vec<u32> {
             break;
         }
     }
-    res.into_iter().rev().collect()
+    Ok(res.into_iter().rev().collect())
 }
 
 pub fn convert(number: &[u32], from_base: u32, to_base: u32) -> Result<Vec<u32>, Error> {
-    if to_base < 2 {
-        return Err(Error::InvalidOutputBase);
-    }
     let decimal_value = to_decimal(number, from_base)?;
-    Ok(from_decimal(decimal_value, to_base))
+    from_decimal(decimal_value, to_base)
 }
