@@ -1,5 +1,5 @@
 #[cfg(feature = "io")]
-use std::io::{Read, Write};
+use std::io::{self, Read, Write};
 use xorcism::Xorcism;
 
 #[test]
