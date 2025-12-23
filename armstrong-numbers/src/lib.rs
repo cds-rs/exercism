@@ -1,31 +1,17 @@
 pub fn is_armstrong_number(num: u32) -> bool {
-    let mut remaining = num;
-    let mut sum_of_powers = 0;
-    let mut digit_count = 1;
 
-    // Constraint: avoid format! to count digits.
+    // Extract "iterate over digits" into an iterator.
+    // The loop patterns from before become: .len() and .map(f).sum()
 
-    // Pattern: iterate over digits, accumulate a count.
-    // This is equivalent to: digits.len()
-    loop {
-        remaining /= 10;
-        if remaining == 0 {
-            break;
-        }
-        digit_count += 1;
-    }
+    // then(|| v) defers computing v until the condition is true (lazy).
+    // then_some(v) computes v first, then wraps in Some if true (eager).
+    // Prefer then_some when v is trivial; laziness adds no benefit here.
+    let digits: Vec<_> = std::iter::successors(Some(num), |&n| (n >= 10).then_some(n / 10))
+        .map(|n| n % 10)
+        .collect();
 
-    // Pattern: iterate over digits, transform each, accumulate sum.
-    // This is equivalent to: digits.map(|d| d.pow(n)).sum()
-    remaining = num;
-    loop {
-        let digit = remaining % 10;
-        sum_of_powers += digit.pow(digit_count);
-        remaining /= 10;
-        if remaining == 0 {
-            break;
-        }
-    }
+    let digit_count = digits.len() as u32;
+    let sum_of_powers: u32 = digits.iter().map(|&d| d.pow(digit_count)).sum();
 
     sum_of_powers == num
 }
