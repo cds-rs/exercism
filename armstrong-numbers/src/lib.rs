@@ -1,17 +1,19 @@
+// Fold over digits with O(1) space; a function that takes a closure.
+// Captures the two-loop pattern without iterator/Vec overhead.
+fn fold_digits(mut n: u32, init: u32, mut f: impl FnMut(u32, u32) -> u32) -> u32 {
+    let mut acc = init;
+    loop {
+        acc = f(acc, n % 10);
+        n /= 10;
+        if n == 0 {
+            break acc;
+        }
+    }
+}
+
 pub fn is_armstrong_number(num: u32) -> bool {
-
-    // Extract "iterate over digits" into an iterator.
-    // The loop patterns from before become: .len() and .map(f).sum()
-
-    // then(|| v) defers computing v until the condition is true (lazy).
-    // then_some(v) computes v first, then wraps in Some if true (eager).
-    // Prefer then_some when v is trivial; laziness adds no benefit here.
-    let digits: Vec<_> = std::iter::successors(Some(num), |&n| (n >= 10).then_some(n / 10))
-        .map(|n| n % 10)
-        .collect();
-
-    let digit_count = digits.len() as u32;
-    let sum_of_powers: u32 = digits.iter().map(|&d| d.pow(digit_count)).sum();
+    let digit_count = fold_digits(num, 0, |count, _| count + 1);
+    let sum_of_powers = fold_digits(num, 0, |sum, digit| sum + digit.pow(digit_count));
 
     sum_of_powers == num
 }
