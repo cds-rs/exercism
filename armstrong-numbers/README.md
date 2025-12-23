@@ -1,5 +1,9 @@
 # Armstrong Numbers
 
+## Optimization notes
+
+[Analysis of Assembly code via Godbolt](./optimization.md).
+
 Welcome to Armstrong Numbers on Exercism's Rust Track.
 If you need help running the tests or submitting your code, check out `HELP.md`.
 
