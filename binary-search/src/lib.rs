@@ -1,3 +1,5 @@
+// Look a binary search implementation!
+// 
 pub fn find<T: Ord>(array: impl AsRef<[T]>, key: T) -> Option<usize> {
     let ary = array.as_ref();
 
