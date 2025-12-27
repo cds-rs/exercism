@@ -1,6 +1,6 @@
 # Armstrong Numbers: Optimization Journey
 
-An exploration of abstraction costs in Rust, from high-level iterators to zero-cost closures.
+An exploration of abstraction costs in Rust, from high-level iterators to zero-cost closures and hardware-accelerated intrinsics.
 
 ## The Problem
 
@@ -69,16 +69,16 @@ pub fn is_armstrong_number(num: u32) -> bool {
 - O(1) space
 - Manual, repetitive structure
 
-### 4. Closure Abstraction (best of both)
+### 4. Closure Abstraction
 
 ```rust
-fn fold_digits(mut n: u32, init: u32, mut f: impl FnMut(u32, u32) -> u32) -> u32 {
+fn fold_digits(mut n: u32, init: u32, f: impl Fn(u32, u32) -> u32) -> u32 {
     let mut acc = init;
-    loop {
+    while n > 0 {
         acc = f(acc, n % 10);
         n /= 10;
-        if n == 0 { break acc; }
     }
+    acc
 }
 
 pub fn is_armstrong_number(num: u32) -> bool {
@@ -92,6 +92,29 @@ pub fn is_armstrong_number(num: u32) -> bool {
 - Clean abstraction: "a function that takes a closure"
 - Captures the fold pattern without iterator overhead
 
+### 5. ilog10 + Closure (current solution)
+
+```rust
+fn fold_digits(mut n: u32, init: u32, f: impl Fn(u32, u32) -> u32) -> u32 {
+    let mut acc = init;
+    while n > 0 {
+        acc = f(acc, n % 10);
+        n /= 10;
+    }
+    acc
+}
+
+pub fn is_armstrong_number(num: u32) -> bool {
+    let digit_count = if num == 0 { 1 } else { num.ilog10() + 1 };
+    let sum_of_powers = fold_digits(num, 0, |sum, digit| sum + digit.pow(digit_count));
+    sum_of_powers == num
+}
+```
+
+- Uses `ilog10()` for O(1) digit counting via CPU instruction
+- Single pass through digits (only for sum calculation)
+- Handles edge case: `0.ilog10()` panics, so special-case it
+
 ## Big-O Analysis
 
 | Approach | Time | Space |
@@ -100,8 +123,11 @@ pub fn is_armstrong_number(num: u32) -> bool {
 | Iterator + collect | O(d) | O(d): Vec |
 | Double loop | O(d) | O(1) |
 | Closure fold | O(d) | O(1) |
+| ilog10 + Closure | O(d) | O(1) |
 
 Where d = number of digits ≈ log₁₀(n)
+
+Note: `ilog10()` is O(1) via hardware instruction, reducing digit counting from O(d) to O(1), but overall complexity remains O(d) due to the sum calculation.
 
 **But Big-O hides constant factors. What does the compiler actually emit?**
 
@@ -112,6 +138,10 @@ Compiled with `-C opt-level=3 -C lto=thin`
 ### Double Loop vs Closure: Identical!
 
 Both compile to ~50 lines of pure register arithmetic. The closure abstraction compiles away completely; both use the multiplication trick for division (`imul rcx, 3435973837; shr rsi, 35`).
+
+### ilog10 Version: Even Smaller
+
+The `ilog10` version compiles to ~40 lines. By using a single `bsr` (bit scan reverse) or `lzcnt` instruction for digit counting, it eliminates one loop entirely. The compiler can optimize digit counting to a single CPU instruction.
 
 ### Iterator Version: Cannot Escape Allocation
 
@@ -127,6 +157,7 @@ Both compile to ~50 lines of pure register arithmetic. The closure abstraction c
 |---------|----------|-------------|----------------|
 | Double loop | ~50 lines | 0 | 0 |
 | Closure fold | ~50 lines | 0 | 0 |
+| ilog10 + Closure | ~40 lines | 0 | 0 |
 | Iterator | ~150 lines | Yes | alloc, dealloc, reserve |
 | format! | ~1000 lines | Yes | fmt machinery |
 
@@ -140,7 +171,9 @@ Both compile to ~50 lines of pure register arithmetic. The closure abstraction c
 
 4. **Design for your constraints**: if you need intermediate storage, use iterators; if not, fold-style abstractions give you clean code with no overhead
 
-5. **Measure with Godbolt**: theoretical analysis only goes so far; check the actual assembly with `-C opt-level=3 -C lto=thin`
+5. **Use hardware when available**: `ilog10()` leverages CPU instructions for O(1) digit counting, eliminating one full pass through the number
+
+6. **Measure with Godbolt**: theoretical analysis only goes so far; check the actual assembly with `-C opt-level=3 -C lto=thin`
 
 ## The Pattern
 
@@ -173,3 +206,4 @@ All examples compiled with `-C opt-level=3 -C lto=thin`
 | Double Loop | https://godbolt.org/z/eYb89Khd1 |
 | Closure | https://godbolt.org/z/zP544Y61f |
 | Iterator | https://godbolt.org/z/9q638Exsz |
+| iLog | https://godbolt.org/z/GaqT8z16x |
