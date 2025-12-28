@@ -1,6 +1,6 @@
 # Armstrong Numbers: Optimization Journey
 
-An exploration of abstraction costs in Rust, from high-level iterators to zero-cost closures and hardware-accelerated intrinsics.
+An exploration of abstraction costs in Rust, from high-level iterators to zero-cost closures and branchless arithmetic.
 
 ## The Problem
 
@@ -92,7 +92,7 @@ pub fn is_armstrong_number(num: u32) -> bool {
 - Clean abstraction: "a function that takes a closure"
 - Captures the fold pattern without iterator overhead
 
-### 5. ilog10 + Closure (current solution)
+### 5. ilog10 + Closure
 
 ```rust
 fn fold_digits(mut n: u32, init: u32, f: impl Fn(u32, u32) -> u32) -> u32 {
@@ -111,9 +111,33 @@ pub fn is_armstrong_number(num: u32) -> bool {
 }
 ```
 
-- Uses `ilog10()` for O(1) digit counting via CPU instruction
+- Uses `ilog10()` for O(1) digit counting via branchless arithmetic
 - Single pass through digits (only for sum calculation)
 - Handles edge case: `0.ilog10()` panics, so special-case it
+
+### 6. Early Return + Inline Loop (current solution)
+
+```rust
+pub fn is_armstrong_number(num: u32) -> bool {
+    // clever observation: always true for single digits (d^1 = d)
+    if num < 10 { return true }
+
+    let digit_count = num.ilog10() + 1;
+    let mut sum_of_powers = 0;
+    let mut n = num;
+    while n > 0 {
+        sum_of_powers += (n % 10).pow(digit_count);
+        n /= 10;
+    }
+
+    sum_of_powers == num
+}
+```
+
+- Early return for 0-9: all single-digit numbers are Armstrong (d¹ = d)
+- No special case needed for `ilog10(0)` since `num < 10` catches it
+- Drops the closure abstraction for maximum simplicity
+- Single function, no dependencies
 
 ## Big-O Analysis
 
@@ -124,10 +148,11 @@ pub fn is_armstrong_number(num: u32) -> bool {
 | Double loop | O(d) | O(1) |
 | Closure fold | O(d) | O(1) |
 | ilog10 + Closure | O(d) | O(1) |
+| Early return + inline | O(d) | O(1) |
 
 Where d = number of digits ≈ log₁₀(n)
 
-Note: `ilog10()` is O(1) via hardware instruction, reducing digit counting from O(d) to O(1), but overall complexity remains O(d) due to the sum calculation.
+Note: `ilog10()` is O(1) via branchless arithmetic with magic constants, reducing digit counting from O(d) to O(1), but overall complexity remains O(d) due to the sum calculation.
 
 **But Big-O hides constant factors. What does the compiler actually emit?**
 
@@ -141,7 +166,23 @@ Both compile to ~50 lines of pure register arithmetic. The closure abstraction c
 
 ### ilog10 Version: Even Smaller
 
-The `ilog10` version compiles to ~40 lines. By using a single `bsr` (bit scan reverse) or `lzcnt` instruction for digit counting, it eliminates one loop entirely. The compiler can optimize digit counting to a single CPU instruction.
+The `ilog10` version compiles to ~40 lines. Instead of a loop, it uses branchless arithmetic with magic constants: a `shr`/`imul`/`shr` sequence approximates log2, then bit manipulation with precomputed constants (393206, 524188, etc.) refines the result to exact log10. One comparison handles the 100000 boundary. No loops for digit counting.
+
+### Early Return vs Zero Check
+
+**Approach #5** (ilog10 + Closure) handles zero specially:
+```asm
+test    edi, edi
+je      .LBB0_1         ; jump if num == 0
+```
+Still runs full ilog10 arithmetic for 1-9.
+
+**Approach #6** (Early Return) catches all single digits:
+```asm
+cmp     edi, 10
+jb      .LBB0_8         ; jump if num < 10
+```
+Skips ilog10 entirely for 0-9. For small inputs, this avoids ~15 instructions of magic constant arithmetic.
 
 ### Iterator Version: Cannot Escape Allocation
 
@@ -157,7 +198,8 @@ The `ilog10` version compiles to ~40 lines. By using a single `bsr` (bit scan re
 |---------|----------|-------------|----------------|
 | Double loop | ~50 lines | 0 | 0 |
 | Closure fold | ~50 lines | 0 | 0 |
-| ilog10 + Closure | ~40 lines | 0 | 0 |
+| ilog10 + Closure | ~60 lines | 0 | 0 |
+| Early return + inline | ~57 lines | 0 | 0 |
 | Iterator | ~150 lines | Yes | alloc, dealloc, reserve |
 | format! | ~1000 lines | Yes | fmt machinery |
 
@@ -171,9 +213,13 @@ The `ilog10` version compiles to ~40 lines. By using a single `bsr` (bit scan re
 
 4. **Design for your constraints**: if you need intermediate storage, use iterators; if not, fold-style abstractions give you clean code with no overhead
 
-5. **Use hardware when available**: `ilog10()` leverages CPU instructions for O(1) digit counting, eliminating one full pass through the number
+5. **Branchless beats loops**: `ilog10()` uses arithmetic tricks with magic constants for O(1) digit counting, eliminating one full pass through the number
 
-6. **Measure with Godbolt**: theoretical analysis only goes so far; check the actual assembly with `-C opt-level=3 -C lto=thin`
+6. **Early returns simplify edge cases**: returning early for single digits avoids `ilog10(0)` panic without conditional logic in the main path
+
+7. **Measure with Godbolt**: theoretical analysis only goes so far; check the actual assembly with `-C opt-level=3 -C lto=thin`
+
+8. Most importantly, know your libraries. `iLog10()` is a good technique for approximating number of digits, and LLVM optimizes it.
 
 ## The Pattern
 
@@ -207,3 +253,4 @@ All examples compiled with `-C opt-level=3 -C lto=thin`
 | Closure | https://godbolt.org/z/zP544Y61f |
 | Iterator | https://godbolt.org/z/9q638Exsz |
 | iLog | https://godbolt.org/z/GaqT8z16x |
+| Early return + inline | https://godbolt.org/z/3dvPrxsnq |

@@ -1,16 +1,14 @@
-fn fold_digits(mut n: u32, init: u32, f: impl Fn(u32, u32) -> u32) -> u32 {
-    let mut acc = init;
+// Timus soln, amazing!
+pub fn is_armstrong_number(num: u32) -> bool {
+    if num < 10 { return true }
+
+    let digit_count = num.ilog10() + 1;
+    let mut sum_of_powers = 0;
+    let mut n = num;
     while n > 0 {
-        acc = f(acc, n % 10);
+        sum_of_powers += (n % 10).pow(digit_count);
         n /= 10;
     }
-    acc
-}
 
-pub fn is_armstrong_number(num: u32) -> bool {
-    // TIL: iLog10! thanks Timus
-    let digit_count = if num == 0 { 1 } else { num.ilog10() + 1 };
-    let sum_of_powers = fold_digits(num, 0, |sum, digit| sum + digit.pow(digit_count));
     sum_of_powers == num
 }
-
