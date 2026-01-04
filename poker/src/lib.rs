@@ -1,31 +1,4 @@
-use std::collections::HashMap;
-
-type HandRank = (Vec<u8>, Vec<u8>);
-
-#[derive(Debug)]
-struct Card {
-    rank: u8,
-    suit: char,
-}
-
-impl Card {
-    fn parse(source: &str) -> Self {
-        let (rank_str, suit_str) = source.split_at(source.len() - 1);
-
-        let rank = match rank_str {
-            "A" => 14,
-            "K" => 13,
-            "Q" => 12,
-            "J" => 11,
-            n => n.parse().unwrap(),
-        };
-
-        Self {
-            rank,
-            suit: suit_str.chars().next().unwrap(),
-        }
-    }
-}
+type HandRank = (u8, Vec<u8>);
 
 #[derive(Debug)]
 struct Hand<'a> {
@@ -34,62 +7,66 @@ struct Hand<'a> {
 }
 
 impl<'a> Hand<'a> {
-    fn new(source: &'a str) -> Self {
-        let mut cards: Vec<Card> = source.split_whitespace().map(Card::parse).collect();
-        cards.sort_unstable_by(|a, b| b.rank.cmp(&a.rank));
-
-        let rank = Self::evaluate(&cards);
-        Self { source, rank }
+    fn parse_rank(s: &str) -> u8 {
+        match s {
+            "A" => 14, "K" => 13, "Q" => 12, "J" => 11,
+            n => n.parse().unwrap(),
+        }
     }
 
-    fn evaluate(cards: &[Card]) -> HandRank {
-        let flush = cards.iter().all(|c| c.suit == cards[0].suit);
-        let straight = Self::is_straight(cards);
+    fn new(source: &'a str) -> Self {
+        let mut ranks: Vec<u8> = source
+            .split_whitespace()
+            .map(|c| Self::parse_rank(&c[..c.len() - 1]))
+            .collect();
+        ranks.sort_unstable();
 
-        // For ace-low straight (wheel), high card is 5
-        let straight_high = if straight && cards[0].rank == 14 && cards[1].rank == 5 {
-            5
-        } else {
-            cards[0].rank
+        // Wheel: A-2-3-4-5 becomes 1-2-3-4-5
+        if ranks == [2, 3, 4, 5, 14] {
+            ranks = vec![1, 2, 3, 4, 5];
+        }
+
+        let suits: Vec<char> = source
+            .split_whitespace()
+            .map(|c| c.chars().last().unwrap())
+            .collect();
+
+        let flush = suits.iter().all(|&s| s == suits[0]);
+        let straight = ranks.windows(2).all(|w| w[1] == w[0] + 1);
+
+        // Group by count: [(count, rank), ...] sorted desc
+        let mut groups: Vec<(u8, u8)> = ranks
+            .iter()
+            .map(|&r| (ranks.iter().filter(|&&x| x == r).count() as u8, r))
+            .collect::<std::collections::HashSet<_>>()
+            .into_iter()
+            .collect();
+        groups.sort_by(|a, b| b.cmp(a));
+
+        let sig: Vec<u8> = groups.iter().map(|(c, _)| *c).collect();
+        let tiebreaker: Vec<u8> = groups.iter().map(|(_, r)| *r).collect();
+
+        let category = match (straight, flush, sig.as_slice()) {
+            (true, true, _) => 8,      // straight flush
+            (_, _, [4, 1]) => 7,       // four kind
+            (_, _, [3, 2]) => 6,       // full house
+            (false, true, _) => 5,     // flush
+            (true, false, _) => 4,     // straight
+            (_, _, [3, 1, 1]) => 3,    // three kind
+            (_, _, [2, 2, 1]) => 2,    // two pair
+            (_, _, [2, 1, 1, 1]) => 1, // pair
+            _ => 0,                    // high card
         };
 
-        match (flush, straight) {
-            (true, true) => (vec![4, 2], vec![straight_high]),
-            (true, false) => (vec![3, 1, 3], cards.iter().map(|c| c.rank).collect()),
-            (false, true) => (vec![3, 1, 2], vec![straight_high]),
-            _ => Self::partition_rank(cards),
+        Self {
+            source,
+            rank: (category, tiebreaker),
         }
-    }
-
-    fn is_straight(cards: &[Card]) -> bool {
-        let consecutive = cards.windows(2).all(|w| w[0].rank == w[1].rank + 1);
-        // Check for wheel: A-5-4-3-2
-        consecutive
-            || (cards[0].rank == 14
-                && cards[1].rank == 5
-                && cards[1..].windows(2).all(|w| w[0].rank == w[1].rank + 1))
-    }
-
-    fn partition_rank(cards: &[Card]) -> HandRank {
-        let mut histogram: HashMap<u8, u8> = HashMap::new();
-        for card in cards {
-            *histogram.entry(card.rank).or_insert(0) += 1;
-        }
-
-        // Sort by (count desc, rank desc)
-        let mut ranked: Vec<_> = histogram.into_iter().map(|(r, c)| (c, r)).collect();
-        ranked.sort_unstable_by(|a, b| b.cmp(a));
-
-        let partition = ranked.iter().map(|(c, _)| *c).collect();
-        let tiebreakers = ranked.iter().map(|(_, r)| *r).collect();
-        (partition, tiebreakers)
     }
 }
 
-/// Given a list of poker hands, return a list of those hands which win.
 pub fn winning_hands<'a>(hands: &[&'a str]) -> Vec<&'a str> {
     let parsed: Vec<Hand> = hands.iter().map(|&h| Hand::new(h)).collect();
-
     let max_rank = parsed.iter().map(|h| &h.rank).max().unwrap();
 
     parsed
